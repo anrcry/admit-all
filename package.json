@@ -1,0 +1,20 @@
+{
+  "name": "puppet",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "module": "true",
+  "scripts": {
+    "dev": "nodemon index.mjs"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^15.5.0",
+    "puppeteer-extra": "^3.3.4",
+    "puppeteer-extra-plugin-stealth": "^2.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.19"
+  }
+}
