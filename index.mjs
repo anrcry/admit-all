@@ -8,7 +8,7 @@ if('code' in process.env && 'password' in process.env && 'username' in process.e
     throw new Error("Please provide the USERNAME, PASSWORD & CODE in the .env file. For more help read the README file.");
 }
 
-const username = process.env.USERNAME;
+const username = process.env.EMAIL;
 
 if(username.length == 0){
     throw new Error("Username is required. Please provide the same in the .env file.")
