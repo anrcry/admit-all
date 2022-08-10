@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-if('code' in process.env && 'password' in process.env && 'username' in process.env) {
+if(!'code' in process.env && !'password' in process.env && !'username' in process.env) {
     throw new Error("Please provide the USERNAME, PASSWORD & CODE in the .env file. For more help read the README file.");
 }
 
@@ -45,8 +45,6 @@ const browser = await puppeteer.launch(
     }
 );
     
-setTimeout(provider, delay);
-
 const provider = async function (){
 
     const context = browser.defaultBrowserContext();
@@ -172,3 +170,5 @@ const provider = async function (){
 
     console.log("Check the screenshots ✨!");
 }
+
+setTimeout(provider, delay);
