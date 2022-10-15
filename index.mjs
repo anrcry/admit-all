@@ -1,8 +1,14 @@
 import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+import AdblockerPlugin from 'puppeteer-extra-plugin-adblocker';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import dotenv from 'dotenv';
 
+const AnonymizePlugin = await import("puppeteer-extra-plugin-anonymize-ua");
+
 dotenv.config();
+
+const sleep = (ms = 1000) => new Promise((r) => setTimeout(r, ms));
+const toMs = (sec) => sec * 1000;
 
 if(!'code' in process.env && !'password' in process.env && !'username' in process.env) {
     throw new Error("Please provide the USERNAME, PASSWORD & CODE in the .env file. For more help read the README file.");
@@ -37,11 +43,15 @@ const headless = process.env.HEADLESS === 'true' ? true : false
 const delay = 1000
 
 puppeteer.use(StealthPlugin());
+puppeteer.use(AnonymizePlugin.default());
+puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
 
 const browser = await puppeteer.launch( 
     { 
         headless, 
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-extensions', '--use-fake-ui-for-media-stream', '--start-maximized', ], 
+		defaultViewport: null,
+		ignoreDefaultArgs: ['--disable-extensions'],
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--use-fake-ui-for-media-stream', '--start-maximized', ], 
     }
 );
     
@@ -52,123 +62,117 @@ const provider = async function (){
         "https://meet.google.com/", ["microphone", "camera", "notifications"]
     );
 
-    console.log(await browser.version());
+    // console.log(await browser.version());
 
     const page = await browser.newPage();
 
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.5060.134 Safari/537.36');
+    // await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.5060.134 Safari/537.36');
 
     await page.goto('https://accounts.google.com/', {
         waitUntil: 'domcontentloaded',
     });
 
-    await page.waitForSelector('input[type="email"]')
+
+    await page.waitForSelector('input[type="email"]', {
+        visible: true
+    });
     await page.click('input[type="email"]')
-    await page.waitForNetworkIdle()
-    await page.type('input[type="email"]', username, {delay: 100});
-    await page.screenshot({path: '1.png'});
+    await page.keyboard.type(username, {delay: 100});
 
-    await page.waitForSelector('#identifierNext')
-    await page.click('#identifierNext')
-    await page.waitForNetworkIdle()
+    await page.waitForSelector('#identifierNext button', {
+        visible: true
+    });
 
-    await page.waitForSelector('input[type="password"]')
-    await page.click('input[type="password"]')
-    await page.waitForNetworkIdle()
-    await page.type('input[type="password"]', password, {delay: 100});
-    await page.screenshot({path: '2.png'});
+    await Promise.all([
+        page.waitForNavigation({
+            waitUntil: 'domcontentloaded'
+        }), // The promise resolves after navigation has finished
+        page.click('#identifierNext button'), // Clicking the link will indirectly cause a navigation
+    ]);
+    
+    await page.waitForSelector('input[type="password"]', {
+        visible: true
+    })
+    await page.click('input[type="password"]');
+    await page.keyboard.type(password, {delay: 100});
+    await page.waitForSelector('#passwordNext button', {
+        visible: true
+    })
+    
+    await Promise.all([
+        page.waitForNavigation(), // The promise resolves after navigation has finished
+        page.click('#passwordNext button'), // Clicking the link will indirectly cause a navigation
+    ]);
+    
 
-    await page.waitForSelector('#passwordNext')
-    await page.click('#passwordNext')
-    await page.waitForNetworkIdle()
+    // await page.screenshot({path: '3.png'});
+    console.info("Preparing to join meeting.... This may take some time ⏳");
+    console.time('Waiting (Join Meeting)');
+    
+    const waitForAccount = await page.waitForResponse( (response) => { console.log({ url: response.url() }); return response.url().includes('myaccount.google.com') }, {
+        // 5 minute timeout taken if 2FA is encountered...
+        timeout: 5 * 60 * 1000
+    } );
 
-    await page.screenshot({path: '3.png'});
+    if(!waitForAccount) { 
+        console.error("👎🏻 Could not redirect...");
+        await browser.close(); process.exit(1) 
+    }
 
-    const waitForAccount = await page.waitForResponse( (response) => response.status() === 200 && response.url().includes('https://myaccount.google.com/') );
+    console.timeEnd('Waiting (Join Meeting)');
 
-    if(!waitForAccount) { await browser.close(); process.exit(1) }
-
-    await page.goto('https://meet.google.com', {
+    const meet = await page.goto(`https://meet.google.com/${code}`, {
         waitUntil: 'domcontentloaded',
     });
 
-    await page.waitForNetworkIdle()
-
-    await page.waitForSelector('input[aria-label="Enter a code or link"]')
-    await page.click('input[aria-label="Enter a code or link"]')
-    await page.waitForNetworkIdle()
-    await page.keyboard.type(code, {delay: 100});
-    await page.keyboard.press('Enter');
-    await page.waitForNetworkIdle()
-
-    // Wait for 5 milliseconds
-    page.waitForTimeout(500);
-
-    await page.waitForSelector('span', {
-        visible: true,
-    });
-
-    await page.waitForTimeout(5000);
-
-    await page.evaluate( () => {
-        document.dispatchEvent(new KeyboardEvent('keydown', {'key':'d', 'ctrlKey': true} ));
-        document.dispatchEvent(new KeyboardEvent('keydown', {'key':'e', 'ctrlKey': true} ));
-    });
-
-    await page.screenshot({path: '4.png'});
-
-    await page.evaluate( () => {
-        const spans = [...document.getElementsByTagName("span")];
-        const span = spans.filter( (span) => (span.innerText === "Join now") )
-        if(span[0] && span[0].parentElement){
-            span[0].parentElement.click();
-        }
-    });
-
-    page.waitForTimeout(2000);
-    await page.waitForNetworkIdle();
-
-    await page.screenshot({path: '5.png'});
-
-    try {
-        await page.waitForSelector('button[aria-label="Show everyone"]', {
+    const response = await Promise.all([
+        //
+        page.waitForSelector("div[aria-label=\"Turn off microphone (CTRL + D)\"]", {
             visible: true,
-            timeout: 10000
-        });
+            timeout: toMs(10)
+        }).catch( (err) => console.error(err) ),
+        page.waitForSelector("div[aria-label=\"Turn off camera (CTRL + E)\"]", {
+            visible: true,
+            timeout: toMs(10)
+        }).catch( (err) => console.error(err) ),,
+        page.waitForSelector("div[aria-label=\"Turn off microphone (ctrl + d)\"]", {
+            visible: true,
+            timeout: toMs(10)
+        }).catch( (err) => console.error(err) ),,
+        page.waitForSelector("div[aria-label=\"Turn off camera (ctrl + e)\"]", {
+            visible: true,
+            timeout: toMs(10)
+        }).catch( (err) => console.error(err) ),
+    ]).then( (values) => values.filter( (value) => typeof value !== 'undefined') );
 
-        await page.click('button[aria-label="Show everyone"]');
-
-        await page.screenshot({path: '6.png'});
-    }catch (err){
-        console.error(err);
+    if(Array.isArray(response) && response.length != 2) {
+        console.error("Sorry we could not switch off the Audio Video hardware");
+        await page.close();
+        await browser.close();
+        process.exit(1);
     }
 
-    try{
-        setInterval( async () => {
-            await page.evaluate( () => {
-                const spans = [...document.getElementsByTagName("span")];
-                const admit = spans.filter( (span) => (span.innerText === "Admit") )
-                const view_all = spans.filter( (span) => (span.innerText === "View All") )
-                const admit_all = spans.filter( (span) => (span.innerText === "Admit All"));
-                if(view_all[0]){
-                    view_all[0]?.parentElement?.click();
-                    if(admit_all[0]){
-                        admit_all[0].parentElement.click();
-                    }
-                }else{
-                    if(admit && admit.length > 0)
-                        admit.forEach(a => a?.parentElement?.click());
-                }
-                
-            });
-        }, 5000);
 
-        // setInterval( async () => await page.screenshot({path: `${(+Date.now() / 1000 | 0)}.png`}), 5 * 60 * 1000);
-    }catch(err){
+    const [ microphone, camera ] = response;
 
-    }
+    // Clicks cannot be simultaneous...
 
-    console.log("Check the screenshots ✨!");
+    await microphone.click({
+        button: 'left'
+    });
+
+    await camera.click({
+        button: 'left'
+    });
+
+    // TODO: Join the meeting.
+
+    await Promise.all([
+        page.waitForNavigation({
+            waitUntil: 'domcontentloaded' // HACK: May be not required...
+        }),
+        
+    ]);
 }
 
 setTimeout(provider, delay);
